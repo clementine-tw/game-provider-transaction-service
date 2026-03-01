@@ -9,15 +9,35 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/joho/godotenv"
 )
 
 func main() {
+
+	// load enviroment vars
+
+	godotenv.Load()
 
 	// logger
 
 	stdoutHandler := slog.NewJSONHandler(os.Stdout, nil)
 	multiHandler := slog.NewMultiHandler(stdoutHandler)
 	logger := slog.New(multiHandler)
+
+	// database
+	config, err := pgxpool.ParseConfig(os.Getenv("POSTGRES_URL"))
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		logger.Error("connect to db failed", "error", err)
+		return
+	}
+	defer pool.Close()
+	if err := pool.Ping(context.Background()); err != nil {
+		logger.Error("ping db failed", "error", err)
+		return
+	}
 
 	// routes
 
@@ -31,7 +51,7 @@ func main() {
 
 	// debug long work
 	mux.HandleFunc("GET /long", func(w http.ResponseWriter, r *http.Request) {
-		slog.Debug("long work")
+		logger.Debug("long work")
 		time.Sleep(10 * time.Second)
 	})
 
@@ -55,7 +75,7 @@ func main() {
 	logger.Info("Stopping server")
 	ctx, _ := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := serv.Shutdown(ctx); err != nil {
-		slog.Error("shutdown server error", "error", err)
+		logger.Error("shutdown server error", "error", err)
 	}
 	logger.Info("Server closed")
 }
